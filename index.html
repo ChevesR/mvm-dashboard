@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <meta name="description" content="An institutional-grade valuation model for Metaplanet (MTPLF) using a multi-factor mNAV model and Monte Carlo simulations.">
+    <title>Metaplanet Valuation Model (MVM) v7.3</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Source+Code+Pro:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', 'Segoe UI', Roboto, sans-serif; transition: background-color 0.3s, color 0.3s; }
+        .tab-button { padding: 0.75rem 1.25rem; border-bottom: 3px solid transparent; font-weight: 600; cursor: pointer; transition: all 0.2s ease-in-out; white-space: nowrap; }
+        .tab-button.active { color: #60a5fa; border-color: #60a5fa; }
+        .tab-button:not(.active):hover { color: #93c5fd; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; animation: fadeIn 0.5s; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .section-card { border: 1px solid; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 20px; height: 20px; border-radius: 50%; margin-top: -7px; cursor: pointer; }
+        .chart-container { position: relative; width: 100%; max-width: 900px; margin-left: auto; margin-right: auto; height: 350px; }
+        
+        body { background-color: #f9fafb; color: #111827; }
+        .dark body { background-color: #111827; color: #d1d5db; }
+        .section-card { background-color: white; border-color: #e5e7eb; }
+        .dark .section-card { background-color: #1f2937; border-color: #374151; }
+        .highlight-value { color: #2563eb; }
+        .dark .highlight-value { color: #60a5fa; }
+        .subtle-text { color: #6b7280; }
+        .dark .subtle-text { color: #9ca3af; }
+        .header-text { color: #111827; }
+        .dark .header-text { color: #f9fafb; }
+        .nav-border { border-color: #e5e7eb; }
+        .dark .nav-border { border-color: #374151; }
+        input[type=range] { background-color: #e5e7eb; }
+        .dark input[type=range] { background-color: #374151; }
+        input[type=range]::-webkit-slider-thumb { background: #2563eb; }
+        .dark input[type=range]::-webkit-slider-thumb { background: #60a5fa; }
+        .dot { transform: translateX(0); transition: transform 0.2s ease-in-out; }
+        input:checked + .toggle-bg .dot { transform: translateX(100%); }
+    </style>
+</head>
+<body class="antialiased">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-7xl">
+        <header class="mb-6">
+            <div class="flex justify-between items-center">
+                <div class="text-left"><h1 class="text-3xl md:text-4xl font-extrabold header-text">MVM v7.3</h1><p class="mt-1 text-lg subtle-text">Metaplanet Valuation Suite</p></div>
+                <div class="flex items-center"><span class="text-sm font-medium subtle-text mr-3">Dark Mode</span><label for="dark-toggle" class="cursor-pointer"><div class="relative"><input type="checkbox" id="dark-toggle" class="sr-only"><div class="block bg-gray-600 w-14 h-8 rounded-full toggle-bg"></div><div class="dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full"></div></div></label></div>
+            </div>
+        </header>
+
+        <div class="border-b nav-border mb-8 overflow-x-auto">
+            <nav class="-mb-px flex justify-center space-x-2 md:space-x-8" aria-label="Tabs">
+                <button id="btn-snapshot" role="tab" aria-selected="true" aria-controls="tab-content-snapshot" class="tab-button active">Snapshot</button>
+                <button id="btn-dashboard" role="tab" aria-selected="false" aria-controls="tab-content-dashboard" class="tab-button">Dashboard</button>
+                <button id="btn-backtest" role="tab" aria-selected="false" aria-controls="tab-content-backtest" class="tab-button">Backtesting</button>
+            </nav>
+        </div>
+        
+        <div id="tab-content-snapshot" role="tabpanel" class="tab-content active">
+            <section class="section-card">
+                <h2 class="text-2xl font-bold text-center header-text">Valuation Snapshot</h2>
+                <p class="text-center subtle-text mt-1">Using static data from June 18, 2025</p>
+                <div class="mt-8 grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div class="text-center p-6 bg-gray-50 dark:bg-gray-800/20 rounded-lg"><p class="text-lg subtle-text">Last Market Price</p><p id="snapshot-currentMarketPrice" class="text-6xl font-extrabold header-text mt-2"></p></div>
+                    <div class="text-center p-6 bg-gray-50 dark:bg-gray-800/20 rounded-lg"><p class="text-lg subtle-text">MVM-Implied Fair Value</p><p id="snapshot-mvmFairValue" class="text-6xl font-extrabold highlight-value mt-2"></p></div>
+                </div>
+            </section>
+        </div>
+
+        <div id="tab-content-dashboard" role="tabpanel" class="tab-content">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="lg:col-span-2 space-y-6">
+                    <div class="section-card">
+                        <h2 class="text-xl font-bold border-b border-gray-200 dark:border-gray-700 pb-2 mb-4 header-text">MVM Projection Output</h2>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
+                            <div class="bg-gray-50 dark:bg-gray-800/50 p-4 rounded-lg"><p class="text-md subtle-text">Base Projected Price</p><p id="dash-outputBasePrice" class="text-4xl font-extrabold header-text"></p></div>
+                            <div class="bg-gray-50 dark:bg-gray-800/50 p-4 rounded-lg"><p class="text-md subtle-text">Implied CAGR</p><p id="dash-outputCagr" class="text-4xl font-extrabold highlight-value"></p></div>
+                            <div class="bg-gray-50 dark:bg-gray-800/50 p-4 rounded-lg"><p class="text-md subtle-text">Final Price (Overshoot)</p><p id="dash-outputFinalPrice" class="text-4xl font-extrabold highlight-value"></p></div>
+                        </div>
+                    </div>
+                    <div class="section-card">
+                        <h2 class="text-xl font-bold border-b border-gray-200 dark:border-gray-700 pb-2 mb-4 header-text">Monte Carlo Simulation</h2>
+                        <div class="text-center mb-6"><button id="runMonteCarloBtn" class="bg-blue-600 text-white font-semibold py-2 px-6 rounded-lg hover:bg-blue-700 transition">Run 1,000 Simulations</button></div>
+                        <div id="mc-results" class="mt-4 grid grid-cols-3 gap-4 text-center hidden">
+                            <div class="bg-red-50 dark:bg-red-900/20 p-3 rounded-lg"><p class="text-xs font-semibold text-red-500 dark:text-red-400">Bear Case (25th %)</p><p id="mc-p25" class="text-xl font-bold header-text"></p></div>
+                            <div class="bg-yellow-50 dark:bg-yellow-900/20 p-3 rounded-lg"><p class="text-xs font-semibold text-yellow-600 dark:text-yellow-400">Base Case (Median)</p><p id="mc-p50" class="text-xl font-bold header-text"></p></div>
+                            <div class="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg"><p class="text-xs font-semibold text-green-600 dark:text-green-400">Bull Case (75th %)</p><p id="mc-p75" class="text-xl font-bold header-text"></p></div>
+                        </div>
+                        <p id="mc-range" class="text-center text-xs subtle-text mt-2 hidden"></p>
+                    </div>
+                    <div class="section-card">
+                        <h2 class="text-xl font-bold border-b border-gray-200 dark:border-gray-700 pb-2 mb-4 header-text">Sample BTC Price Paths</h2>
+                        <div class="chart-container"><canvas id="mcPathsChart" role="img" aria-label="Simulated BTC price paths chart"></canvas></div>
+                    </div>
+                </div>
+                <div class="section-card space-y-4">
+                    <h2 class="text-xl font-bold header-text">Model Inputs</h2>
+                    <div id="dash-inputsContainer"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-content-backtest" role="tabpanel" class="tab-content">
+            <div class="space-y-8">
+                <div class="section-card"><h2 class="text-2xl font-bold text-center header-text">Historical Premium to NAV Analysis</h2><div class="chart-container mt-6"><canvas id="premiumChart" role="img" aria-label="Historical Premium to NAV chart"></canvas></div></div>
+                <div class="section-card"><h2 class="text-2xl font-bold text-center header-text">Model Backtest (Weekly Data)</h2><div class="mt-6 flow-root"><div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700"><thead class="bg-gray-50 dark:bg-gray-800"><tr><th class="px-3 py-3.5 text-left text-sm font-semibold header-text">Date</th><th class="px-3 py-3.5 text-left text-sm font-semibold header-text">Actual Price</th><th class="px-3 py-3.5 text-left text-sm font-semibold header-text">NAV</th><th class="px-3 py-3.5 text-left text-sm font-semibold header-text">Implied Price</th><th class="px-3 py-3.5 text-left text-sm font-semibold header-text">Error %</th></tr></thead><tbody id="backtestTableBody" class="divide-y divide-gray-200 dark:divide-gray-700"></tbody></table></div></div></div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const MVM_CONFIG = {
+            STATIC_DATA: { mtplfPrice: 13.15, btcPrice: 107750, btcHeld: 10000, shares: 600710000, cash: 22000000, debt: 18000000 },
+            MNAV_FACTORS: {
+                basePremium: { value: 3.5 },
+                beta: { label: "Leveraged BTC Beta", weight: 0.30, min: -1, max: 3, value: 1.5 },
+                flows: { label: "Institutional Demand", weight: 0.25, min: -2, max: 2, value: 0.8 },
+                sentiment: { label: "Market Sentiment", weight: 0.15, min: -2, max: 2, value: 0.5 },
+                macro: { label: "Macro-Risk Environment", weight: 0.20, min: -2, max: 2, value: -0.2 },
+                native: { label: "Crypto-Native Value", weight: 0.10, min: -2, max: 2, value: 0.1 },
+            },
+            Z_SCORE_SCALE: 5.0,
+            HISTORICAL_DATA: [
+                 { date: '2024-07-01', btcPrice: 65000, actualPrice: 7.50, btcHeld: 10000, shares: 600000000, factors: { beta: 1.2, flows: 0.5, sentiment: 0.3, macro: 0.1, native: 0.2 } },
+                 { date: '2024-10-01', btcPrice: 85000, actualPrice: 9.80, btcHeld: 10000, shares: 600000000, factors: { beta: 1.8, flows: 1.1, sentiment: 0.8, macro: -0.1, native: 0.0 } },
+                 { date: '2025-01-15', btcPrice: 115000, actualPrice: 11.20, btcHeld: 10000, shares: 600000000, factors: { beta: 1.5, flows: 0.6, sentiment: 0.4, macro: -0.3, native: -0.1 } },
+                 { date: '2025-04-15', btcPrice: 135000, actualPrice: 18.00, btcHeld: 10000, shares: 600000000, factors: { beta: 2.2, flows: 1.5, sentiment: 1.2, macro: 0.0, native: 0.3 } },
+                 { date: '2025-06-15', btcPrice: 107750, actualPrice: 13.15, btcHeld: 10000, shares: 600710000, factors: { beta: 1.5, flows: 0.8, sentiment: 0.5, macro: -0.2, native: 0.1 } },
+            ]
+        };
+
+        const DOM = { dash: { sliders: {}, factorSliders: {} } };
+        let mcPathsChart = null;
+
+        const formatCurrency = (val, minDigits = 2) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: minDigits }).format(val);
+        const formatNumber = (val) => new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(val);
+        const safeParse = (val, fallback = 0) => { const num = parseFloat(val); return isNaN(num) ? fallback : num; };
+
+        function calculateEnhancedNAV(p, h, s, c, d) { return s > 0 ? (p * h + c - d) / s : 0; }
+        
+        function getMnavFromFactors(factorValues) {
+            let linearSum = 0;
+            for (const key in factorValues) if (MVM_CONFIG.MNAV_FACTORS[key]?.weight) linearSum += factorValues[key] * MVM_CONFIG.MNAV_FACTORS[key].weight;
+            return MVM_CONFIG.MNAV_FACTORS.basePremium.value + (linearSum * MVM_CONFIG.Z_SCORE_SCALE);
+        }
+
+        function getSliderValues() {
+            const values = {};
+            for (const key in DOM.dash.sliders) values[key] = safeParse(DOM.dash.sliders[key].value);
+            values.factorValues = {};
+            for (const key in DOM.dash.factorSliders) values.factorValues[key] = safeParse(DOM.dash.factorSliders[key].value);
+            return values;
+        }
+
+        function runPointInTimeProjection() {
+            const sliderVals = getSliderValues();
+            const { btcCagr, years, btcHoldings, overshoot, factorValues, acquisitionMnav } = sliderVals;
+            const finalBtcPrice = MVM_CONFIG.STATIC_DATA.btcPrice * Math.pow(1 + btcCagr, years);
+            const mnav = getMnavFromFactors(factorValues);
+            const nav = calculateEnhancedNAV(finalBtcPrice, btcHoldings, MVM_CONFIG.STATIC_DATA.shares, MVM_CONFIG.STATIC_DATA.cash, MVM_CONFIG.STATIC_DATA.debt);
+            const basePrice = nav * mnav;
+            const finalPrice = basePrice * overshoot;
+            const acquisitionNav = calculateEnhancedNAV(MVM_CONFIG.STATIC_DATA.btcPrice, MVM_CONFIG.STATIC_DATA.btcHeld, MVM_CONFIG.STATIC_DATA.shares, MVM_CONFIG.STATIC_DATA.cash, MVM_CONFIG.STATIC_DATA.debt);
+            const acquisitionPrice = acquisitionNav * acquisitionMnav;
+            const cagr = (acquisitionPrice > 0 && finalPrice > 0) ? Math.pow(finalPrice / acquisitionPrice, 1 / years) - 1 : 0;
+            updateDashboardUI({ basePrice, finalPrice, cagr, sliderVals });
+        }
+        
+        function updateDashboardUI(values) {
+            const { basePrice, finalPrice, cagr, sliderVals } = values;
+            document.getElementById('dash-btcCagrDisplay').textContent = `${(sliderVals.btcCagr * 100).toFixed(0)}%`;
+            document.getElementById('dash-yearsDisplay').textContent = `${sliderVals.years} Year(s)`;
+            document.getElementById('dash-btcHoldingsDisplay').textContent = formatNumber(sliderVals.btcHoldings);
+            document.getElementById('dash-acquisitionMnavDisplay').textContent = `${sliderVals.acquisitionMnav.toFixed(1)}x`;
+            document.getElementById('dash-overshootDisplay').textContent = `${sliderVals.overshoot.toFixed(2)}x`;
+            document.getElementById('dash-outputBasePrice').textContent = formatCurrency(basePrice);
+            document.getElementById('dash-outputFinalPrice').textContent = formatCurrency(finalPrice);
+            document.getElementById('dash-outputCagr').textContent = `${(cagr * 100).toFixed(1)}%`;
+            for (const key in DOM.dash.factorSliders) document.getElementById(`dash-display-${key}`).textContent = parseFloat(DOM.dash.factorSliders[key].value).toFixed(1);
+        }
+
+        function runMonteCarlo() {
+            const button = document.getElementById('runMonteCarloBtn');
+            button.disabled = true;
+            button.textContent = 'Running...';
+
+            setTimeout(() => { // Simulate async operation
+                const { btcCagr, years, volatility, btcHoldings, factorValues } = getSliderValues();
+                const mu = btcCagr;
+                const drift = mu - 0.5 * volatility**2;
+                const mnav = getMnavFromFactors(factorValues);
+                const finalPrices = [], samplePaths = [];
+                const numSims = 1000, timeSteps = 252 * years, dt = 1 / 252;
+                
+                for(let i = 0; i < numSims; i++) {
+                    let simBtcPrice = MVM_CONFIG.STATIC_DATA.btcPrice;
+                    const path = [simBtcPrice];
+                    for(let t = 0; t < timeSteps; t++) {
+                         const Z = Math.sqrt(-2 * Math.log(Math.random())) * Math.cos(2 * Math.PI * Math.random());
+                         simBtcPrice *= Math.exp(drift * dt + volatility * Math.sqrt(dt) * Z);
+                         path.push(simBtcPrice);
+                    }
+                    const simNav = calculateEnhancedNAV(simBtcPrice, btcHoldings, MVM_CONFIG.STATIC_DATA.shares, MVM_CONFIG.STATIC_DATA.cash, MVM_CONFIG.STATIC_DATA.debt);
+                    finalPrices.push(simNav * mnav);
+                    if (i < 10) samplePaths.push(path);
+                }
+                finalPrices.sort((a,b) => a-b);
+                document.getElementById('mc-p25').textContent = formatCurrency(finalPrices[Math.floor(numSims * 0.25)]);
+                document.getElementById('mc-p50').textContent = formatCurrency(finalPrices[Math.floor(numSims * 0.50)]);
+                document.getElementById('mc-p75').textContent = formatCurrency(finalPrices[Math.floor(numSims * 0.75)]);
+                document.getElementById('mc-range').textContent = `5th-95th Range: ${formatCurrency(finalPrices[Math.floor(numSims*0.05)])} – ${formatCurrency(finalPrices[Math.floor(numSims*0.95)])}`;
+                document.getElementById('mc-results').classList.remove('hidden');
+                document.getElementById('mc-range').classList.remove('hidden');
+                visualizeSamplePaths(samplePaths);
+
+                button.disabled = false;
+                button.textContent = 'Run 1,000 Simulations';
+            }, 50);
+        }
+        
+        function visualizeSamplePaths(paths) {
+            const datasets = paths.map((path) => ({ data: path, borderColor: `rgba(96, 165, 250, 0.3)`, borderWidth: 1.5, pointRadius: 0, tension: 0.2 }));
+            if (mcPathsChart) mcPathsChart.destroy();
+            const canvas = document.getElementById('mcPathsChart');
+            if(canvas) {
+                mcPathsChart = new Chart(canvas, {
+                    type: 'line', data: { labels: Array.from({length: paths[0].length}, (_, i) => i), datasets },
+                    options: { animation: false, responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, title: { display: true, text: 'Simulated BTC Price Paths', color: '#d1d5db'} },
+                        scales: { y: { type: 'logarithmic', ticks: { callback: value => formatCurrency(value,0), color: '#9ca3af' }, grid: { color: '#374151' } }, x: { display: false } }
+                    }
+                });
+            }
+        }
+        
+        function initializeBacktestingUI() {
+            const tableBody = document.getElementById('backtestTableBody');
+            const premiumChartCanvas = document.getElementById('premiumChart');
+            if (!tableBody || !premiumChartCanvas) return;
+            const { HISTORICAL_DATA, STATIC_DATA } = MVM_CONFIG;
+            const premiumData = [], labels = [];
+            HISTORICAL_DATA.forEach(row => {
+                const nav = calculateEnhancedNAV(row.btcPrice, row.btcHeld, row.shares, STATIC_DATA.cash, STATIC_DATA.debt);
+                const impliedMnav = getMnavFromFactors(row.factors);
+                const impliedPrice = nav * impliedMnav;
+                const error = ((impliedPrice / row.actualPrice) - 1) * 100;
+                let errorColor = Math.abs(error) > 15 ? 'text-red-400' : (Math.abs(error) > 5 ? 'text-yellow-400' : 'text-green-400');
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td class="px-3 py-4 text-sm subtle-text">${row.date}</td><td class="px-3 py-4 text-sm font-medium header-text">${formatCurrency(row.actualPrice)}</td><td class="px-3 py-4 text-sm subtle-text">${formatCurrency(nav)}</td><td class="px-3 py-4 text-sm highlight-value font-semibold">${formatCurrency(impliedPrice)}</td><td class="px-3 py-4 text-sm font-semibold ${errorColor}">${error.toFixed(1)}%</td>`;
+                tableBody.appendChild(tr);
+                premiumData.push(row.actualPrice / nav);
+                labels.push(row.date);
+            });
+            new Chart(premiumChartCanvas, { type: 'line', data: { labels, datasets: [{ label: 'Realized mNAV', data: premiumData, borderColor: '#60a5fa', backgroundColor: 'rgba(96, 165, 250, 0.2)', fill: true, tension: 0.1 }] },
+                options: { responsive: true, maintainAspectRatio: false, scales: { y: { ticks: { callback: v => v.toFixed(1) + 'x', color: '#9ca3af' }, grid: { color: '#374151' }, title: {display: true, text: 'mNAV Multiple', color: '#9ca3af'} }, x: { ticks: { color: '#9ca3af' }, grid: { color: '#374151' } } } }
+            });
+        }
+        
+        function populateSnapshot() {
+            const { STATIC_DATA, MNAV_FACTORS } = MVM_CONFIG;
+            const defaultFactorValues = {};
+            Object.keys(MNAV_FACTORS).forEach(key => { if (MNAV_FACTORS[key].label) defaultFactorValues[key] = MNAV_FACTORS[key].value; });
+            const mnav = getMnavFromFactors(defaultFactorValues);
+            const nav = calculateEnhancedNAV(STATIC_DATA.btcPrice, STATIC_DATA.btcHeld, STATIC_DATA.shares, STATIC_DATA.cash, STATIC_DATA.debt);
+            document.getElementById('snapshot-currentMarketPrice').textContent = formatCurrency(STATIC_DATA.mtplfPrice);
+            document.getElementById('snapshot-mvmFairValue').textContent = formatCurrency(nav * mnav);
+        }
+
+        function createSlider(id, label, min, max, value, step) {
+             const div = document.createElement('div');
+             div.innerHTML = `<label class="font-medium text-sm subtle-text">${label}</label><span id="dash-${id}Display" class="float-right font-mono text-sm subtle-text"></span><input type="range" id="dash-${id}Slider" min="${min}" max="${max}" value="${value}" step="${step}" class="w-full h-2 rounded-lg appearance-none">`;
+             return div;
+        }
+
+        function initializeDOM() {
+            const inputsContainer = document.getElementById('dash-inputsContainer');
+            if (!inputsContainer) return;
+            const coreSliderConfig = {
+                btcCagr: { min: -0.5, max: 2.0, value: 0.8, step: 0.05, label: "Expected BTC CAGR" },
+                years: { min: 1, max: 5, value: 1, step: 1, label: "Projection Horizon" },
+                btcHoldings: { min: 10000, max: 250000, value: 180000, step: 1000, label: "Future BTC Holdings" },
+                acquisitionMnav: { min: 3, max: 15, value: 8, step: 0.5, label: "Acquisition mNAV" },
+                volatility: { min: 0.3, max: 1.2, value: 0.7, step: 0.05, label: "BTC Annual Volatility" },
+                overshoot: { min: 1, max: 2, value: 1.2, step: 0.05, label: "Speculative Overshoot" }
+            };
+            Object.entries(coreSliderConfig).forEach(([key, config]) => {
+                const div = createSlider(key, config.label, config.min, config.max, config.value, config.step);
+                inputsContainer.appendChild(div);
+                DOM.dash.sliders[key] = document.getElementById(`dash-${key}Slider`);
+            });
+            const factorContainer = document.createElement('div');
+            factorContainer.className = 'space-y-3 pt-2';
+            inputsContainer.appendChild(factorContainer);
+            Object.keys(MVM_CONFIG.MNAV_FACTORS).forEach(key => {
+                const factor = MVM_CONFIG.MNAV_FACTORS[key];
+                if (!factor.label) return;
+                const div = createSlider(`factor-${key}`, factor.label, factor.min, factor.max, factor.value, 0.1);
+                factorContainer.appendChild(div);
+                DOM.dash.factorSliders[key] = document.getElementById(`dash-factor-${key}Slider`);
+            });
+        }
+        
+        function initializeEventListeners() {
+            document.querySelectorAll('.tab-button').forEach(button => {
+                button.addEventListener('click', (e) => switchTab(button.id.split('-')[1], e.currentTarget));
+            });
+            Object.values({...DOM.dash.sliders, ...DOM.dash.factorSliders}).forEach(slider => {
+                if (slider) slider.addEventListener('input', runPointInTimeProjection);
+            });
+            document.getElementById('runMonteCarloBtn')?.addEventListener('click', runMonteCarlo);
+            document.getElementById('dark-toggle')?.addEventListener('change', (e) => {
+                document.documentElement.classList.toggle('dark', e.target.checked);
+                localStorage.setItem('theme', e.target.checked ? 'dark' : 'light');
+            });
+        }
+
+        function applyPersistedTheme() {
+            const prefersDark = localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches);
+            document.documentElement.classList.toggle('dark', prefersDark);
+            const toggle = document.getElementById('dark-toggle');
+            if(toggle) toggle.checked = prefersDark;
+        }
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            applyPersistedTheme();
+            initializeDOM();
+            initializeEventListeners();
+            runPointInTimeProjection();
+            initializeBacktestingUI();
+            populateSnapshot();
+        });
+    </script>
+</body>
+</html>
